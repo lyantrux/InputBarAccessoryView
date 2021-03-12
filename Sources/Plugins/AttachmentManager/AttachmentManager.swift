@@ -26,6 +26,7 @@
 //
 
 import UIKit
+import AVFoundation
 
 open class AttachmentManager: NSObject, InputPlugin {
     
@@ -60,7 +61,7 @@ open class AttachmentManager: NSObject, InputPlugin {
     open var isPersistent = false { didSet { attachmentView.reloadData() } }
     
     /// A flag to determine if the AddAttachmentCell is visible
-    open var showAddAttachmentCell = true { didSet { attachmentView.reloadData() } }
+    open var showAddAttachmentCell = false { didSet { attachmentView.reloadData() } }
     
     /// The color applied to the backgroundColor of the deleteButton in each `AttachmentCell`
     open var tintColor: UIColor {
@@ -191,6 +192,21 @@ extension AttachmentManager: UICollectionViewDataSource, UICollectionViewDelegat
                 cell.imageView.tintColor = tintColor
                 cell.deleteButton.backgroundColor = tintColor
                 return cell
+            case .url(let url):
+                //this is video
+                if let videoThumbnail = self.generateThumbnail(url: url){
+                    guard let cell = collectionView.dequeueReusableCell(withReuseIdentifier: ImageAttachmentCell.reuseIdentifier, for: indexPath) as? ImageAttachmentCell else {
+                        fatalError()
+                    }
+                    cell.attachment = attachment
+                    cell.indexPath = indexPath
+                    cell.manager = self
+                    cell.imageView.image = videoThumbnail
+                    cell.imageView.tintColor = tintColor
+                    cell.deleteButton.backgroundColor = tintColor
+                    return cell
+                }
+                return collectionView.dequeueReusableCell(withReuseIdentifier: AttachmentCell.reuseIdentifier, for: indexPath) as! AttachmentCell
             default:
                 return collectionView.dequeueReusableCell(withReuseIdentifier: AttachmentCell.reuseIdentifier, for: indexPath) as! AttachmentCell
             }
@@ -243,5 +259,133 @@ extension AttachmentManager: UICollectionViewDataSource, UICollectionViewDelegat
         cell.containerView.layer.addSublayer(vLayer)
         cell.containerView.layer.addSublayer(hLayer)
         return cell
+    }
+    
+    func generateThumbnail(url: URL) -> UIImage? {
+        do {
+            let asset = AVURLAsset(url: url)
+            let imageGenerator = AVAssetImageGenerator(asset: asset)
+            imageGenerator.appliesPreferredTrackTransform = true
+            // Select the right one based on which version you are using
+            // Swift 4.2
+            let cgImage = try imageGenerator.copyCGImage(at: .zero,
+                                                         actualTime: nil)
+            // Swift 4.0
+            let uiimage = UIImage(cgImage: cgImage)
+            let playImage = UIImage(named: "play-video")!
+            let tintableImage = playImage.withRenderingMode(.alwaysTemplate)
+            let finalImage = tintableImage.imageWithColor(color: .white)
+            let resizedImage = self.resizeImage(image: finalImage!, targetSize: CGSize.init(width: 50, height: 50))
+            let overlay = uiimage.overlayWith(image: resizedImage!, posX: uiimage.size.width/2 - 25, posY: uiimage.size.height/2 - 25)
+
+
+            return overlay
+        } catch {
+            print(error.localizedDescription)
+
+            return nil
+        }
+    }
+    
+    func resizeImage(image: UIImage, targetSize: CGSize) -> UIImage? {
+        let size = image.size
+
+        let widthRatio  = targetSize.width  / size.width
+        let heightRatio = targetSize.height / size.height
+
+        // Figure out what our orientation is, and use that to form the rectangle
+        var newSize: CGSize
+        if(widthRatio > heightRatio) {
+            newSize = CGSize.init(width: size.width * heightRatio, height: size.height * heightRatio)
+        } else {
+            newSize = CGSize.init(width: size.width * widthRatio, height: size.height * widthRatio)
+        }
+
+        // This is the rect that we've calculated out and this is what is actually used below
+        let rect = CGRect.init(x: 0, y: 0, width: newSize.width, height: newSize.height)
+
+        // Actually do the resizing to the rect using the ImageContext stuff
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        image.draw(in: rect)
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return newImage
+    }
+}
+extension UIImage {
+
+  func overlayWith(image: UIImage, posX: CGFloat, posY: CGFloat) -> UIImage {
+    
+    let shortSide = min(self.size.width, self.size.height)
+    if shortSide > 50.0{
+        
+    }
+    let newWidth = size.width < posX + image.size.width ? posX + image.size.width : size.width
+    let newHeight = size.height < posY + image.size.height ? posY + image.size.height : size.height
+    let newSize = CGSize(width: newWidth, height: newHeight)
+
+    UIGraphicsBeginImageContextWithOptions(newSize, false, 0.0)
+    draw(in: CGRect(origin: CGPoint.zero, size: size))
+    image.draw(in: CGRect(origin: CGPoint(x: posX, y: posY), size: image.size))
+    let newImage = UIGraphicsGetImageFromCurrentImageContext()!
+    UIGraphicsEndImageContext()
+
+    return newImage
+  }
+
+    
+    func imageWithColor(color: UIColor) -> UIImage? {
+            var image = withRenderingMode(.alwaysTemplate)
+            UIGraphicsBeginImageContextWithOptions(size, false, scale)
+            color.set()
+            image.draw(in: CGRect(x: 0, y: 0, width: size.width, height: size.height))
+            image = UIGraphicsGetImageFromCurrentImageContext()!
+            UIGraphicsEndImageContext()
+            return image
+        }
+    
+    func resizeImage(targetSize: CGSize) -> UIImage? {
+        let size = self.size
+
+        let widthRatio  = targetSize.width  / size.width
+        let heightRatio = targetSize.height / size.height
+
+        // Figure out what our orientation is, and use that to form the rectangle
+        var newSize: CGSize
+        if(widthRatio > heightRatio) {
+            newSize = CGSize.init(width: size.width * heightRatio, height: size.height * heightRatio)
+        } else {
+            newSize = CGSize.init(width: size.width * widthRatio, height: size.height * widthRatio)
+        }
+
+        // This is the rect that we've calculated out and this is what is actually used below
+        let rect = CGRect.init(x: 0, y: 0, width: newSize.width, height: newSize.height)
+
+        // Actually do the resizing to the rect using the ImageContext stuff
+        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
+        self.draw(in: rect)
+        let newImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+
+        return newImage
+    }
+    
+    func generateThumbnail() -> UIImage? {
+        do {
+            
+            // Swift 4.0
+           
+            let playImage = UIImage(named: "play-video")!
+            let tintableImage = playImage.withRenderingMode(.alwaysTemplate)
+            let finalImage = tintableImage.imageWithColor(color: .white)
+            let resizedImage = finalImage!.resizeImage(targetSize: CGSize.init(width: 50, height: 50))
+            let overlay = self.overlayWith(image: resizedImage!, posX: self.size.width/2 - 25, posY: self.size.height/2 - 25)
+            return overlay
+        } catch {
+            print(error.localizedDescription)
+
+            return nil
+        }
     }
 }
